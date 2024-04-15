@@ -9,7 +9,7 @@ import clip
 import numpy as np
 import torch
 import torch.nn.functional as F
-from clip.model import CLIP
+from transformers import CLIPModel, CLIPTokenizer
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -18,7 +18,7 @@ from combiner import Combiner
 from utils import extract_index_features, collate_fn, element_wise_sum, device
 
 
-def compute_fiq_val_metrics(relative_val_dataset: FashionIQDataset, clip_model: CLIP, index_features: torch.tensor,
+def compute_fiq_val_metrics(relative_val_dataset: FashionIQDataset, clip_model: CLIPModel, index_features: torch.tensor,
                             index_names: List[str], combining_function: callable) -> Tuple[float, float]:
     """
     Compute validation metrics on FashionIQ dataset
@@ -57,7 +57,7 @@ def compute_fiq_val_metrics(relative_val_dataset: FashionIQDataset, clip_model: 
     return recall_at10, recall_at50
 
 
-def generate_fiq_val_predictions(clip_model: CLIP, relative_val_dataset: FashionIQDataset,
+def generate_fiq_val_predictions(clip_model: CLIPModel, relative_val_dataset: FashionIQDataset,
                                  combining_function: callable, index_names: List[str], index_features: torch.tensor) -> \
         Tuple[torch.tensor, List[str]]:
     """
@@ -80,7 +80,7 @@ def generate_fiq_val_predictions(clip_model: CLIP, relative_val_dataset: Fashion
     name_to_feat = dict(zip(index_names, index_features))
 
     # Initialize predicted features and target names
-    predicted_features = torch.empty((0, clip_model.visual.output_dim)).to(device, non_blocking=True)
+    predicted_features = torch.empty((0, 768)).to(device, non_blocking=True)
     target_names = []
 
     for reference_names, batch_target_names, captions in tqdm(relative_val_loader):  # Load data
@@ -90,11 +90,13 @@ def generate_fiq_val_predictions(clip_model: CLIP, relative_val_dataset: Fashion
         input_captions = [
             f"{flattened_captions[i].strip('.?, ').capitalize()} and {flattened_captions[i + 1].strip('.?, ')}" for
             i in range(0, len(flattened_captions), 2)]
-        text_inputs = clip.tokenize(input_captions, context_length=77).to(device, non_blocking=True)
+        clip_tokenizer = CLIPTokenizer.from_pretrained('clip-vit-large-patch14')
+        text_inputs = clip_tokenizer(input_captions, padding=True, return_tensors="pt")
+        text_inputs = text_inputs.to(device)
 
         # Compute the predicted features
         with torch.no_grad():
-            text_features = clip_model.encode_text(text_inputs)
+            text_features = clip_model.get_text_features(**text_inputs)
             # Check whether a single element is in the batch due to the exception raised by torch.stack when used with
             # a single tensor
             if text_features.shape[0] == 1:
@@ -110,7 +112,7 @@ def generate_fiq_val_predictions(clip_model: CLIP, relative_val_dataset: Fashion
     return predicted_features, target_names
 
 
-def fashioniq_val_retrieval(dress_type: str, combining_function: callable, clip_model: CLIP, preprocess: callable):
+def fashioniq_val_retrieval(dress_type: str, combining_function: callable, clip_model: CLIPModel, preprocess: callable):
     """
     Perform retrieval on FashionIQ validation set computing the metrics. To combine the features the `combining_function`
     is used
@@ -132,7 +134,7 @@ def fashioniq_val_retrieval(dress_type: str, combining_function: callable, clip_
                                    combining_function)
 
 
-def compute_cirr_val_metrics(relative_val_dataset: CIRRDataset, clip_model: CLIP, index_features: torch.tensor,
+def compute_cirr_val_metrics(relative_val_dataset: CIRRDataset, clip_model: CLIPModel, index_features: torch.tensor,
                              index_names: List[str], combining_function: callable) -> Tuple[
     float, float, float, float, float, float, float]:
     """
@@ -188,7 +190,7 @@ def compute_cirr_val_metrics(relative_val_dataset: CIRRDataset, clip_model: CLIP
     return group_recall_at1, group_recall_at2, group_recall_at3, recall_at1, recall_at5, recall_at10, recall_at50
 
 
-def generate_cirr_val_predictions(clip_model: CLIP, relative_val_dataset: CIRRDataset,
+def generate_cirr_val_predictions(clip_model: CLIPModel, relative_val_dataset: CIRRDataset,
                                   combining_function: callable, index_names: List[str], index_features: torch.tensor) -> \
         Tuple[torch.tensor, List[str], List[str], List[List[str]]]:
     """
@@ -239,7 +241,7 @@ def generate_cirr_val_predictions(clip_model: CLIP, relative_val_dataset: CIRRDa
     return predicted_features, reference_names, target_names, group_members
 
 
-def cirr_val_retrieval(combining_function: callable, clip_model: CLIP, preprocess: callable):
+def cirr_val_retrieval(combining_function: callable, clip_model: CLIPModel, preprocess: callable):
     """
     Perform retrieval on CIRR validation set computing the metrics. To combine the features the `combining_function`
     is used

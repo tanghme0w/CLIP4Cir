@@ -5,7 +5,7 @@ from typing import Union, Tuple, List
 
 import torch
 import torch.nn.functional as F
-from clip.model import CLIP
+from transformers import CLIPModel
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -18,7 +18,7 @@ else:
     device = torch.device("cpu")
 
 
-def extract_index_features(dataset: Union[CIRRDataset, FashionIQDataset], clip_model: CLIP) -> \
+def extract_index_features(dataset: Union[CIRRDataset, FashionIQDataset], clip_model: CLIPModel) -> \
         Tuple[torch.tensor, List[str]]:
     """
     Extract FashionIQ or CIRR index features
@@ -26,7 +26,7 @@ def extract_index_features(dataset: Union[CIRRDataset, FashionIQDataset], clip_m
     :param clip_model: CLIP model
     :return: a tensor of features and a list of images
     """
-    feature_dim = clip_model.visual.output_dim
+    feature_dim = 768
     classic_val_loader = DataLoader(dataset=dataset, batch_size=32, num_workers=multiprocessing.cpu_count(),
                                     pin_memory=True, collate_fn=collate_fn)
     index_features = torch.empty((0, feature_dim)).to(device, non_blocking=True)
@@ -38,7 +38,7 @@ def extract_index_features(dataset: Union[CIRRDataset, FashionIQDataset], clip_m
     for names, images in tqdm(classic_val_loader):
         images = images.to(device, non_blocking=True)
         with torch.no_grad():
-            batch_features = clip_model.encode_image(images)
+            batch_features = clip_model.get_image_features(images)
             index_features = torch.vstack((index_features, batch_features))
             index_names.extend(names)
     return index_features, index_names
